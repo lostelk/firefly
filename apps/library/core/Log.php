@@ -1,5 +1,7 @@
 <?php
+
 namespace Core;
+
 /**
  * Log
  *
@@ -9,6 +11,7 @@ namespace Core;
  * @logs   :
  *
  */
+
 class Log
 {
     const TRACE = 'TRACE'; //流程追踪
@@ -18,6 +21,12 @@ class Log
     const ERROR = 'ERROR';
     const ALERT = 'ALERT';
     const RECORD = 'RECORD';
+
+
+    public function __construct($logPath)
+    {
+        $this->logPath = $logPath;
+    }
 
     /**
      * **必须**立刻采取行动
@@ -30,7 +39,7 @@ class Log
      *
      * @return null
      */
-    public static function alert($message, array $context = array())
+    public function alert($message, array $context = [])
     {
         self::write(static::ALERT, $message, $context);
     }
@@ -43,7 +52,7 @@ class Log
      *
      * @return null
      */
-    public static function error($message, array $context = array())
+    public function error($message, array $context = [])
     {
         self::write(static::ERROR, $message, $context);
     }
@@ -58,7 +67,7 @@ class Log
      *
      * @return null
      */
-    public static function warn($message, array $context = array())
+    public function warn($message, array $context = [])
     {
         self::write(static::WARN, $message, $context);
     }
@@ -71,7 +80,7 @@ class Log
      *
      * @return null
      */
-    public static function trace($message, array $context = array())
+    public function trace($message, array $context = [])
     {
         self::write(static::TRACE, $message, $context);
     }
@@ -86,7 +95,7 @@ class Log
      *
      * @return null
      */
-    public static function info($message, array $context = array())
+    public function info($message, array $context = [])
     {
         self::write(static::INFO, $message, $context);
     }
@@ -99,7 +108,7 @@ class Log
      *
      * @return null
      */
-    public static function debug($message, array $context = array())
+    public function debug($message, array $context = [])
     {
         self::write(static::DEBUG, $message, $context);
     }
@@ -112,7 +121,7 @@ class Log
      *
      * @return null
      */
-    public static function record($action = '', $data = [], $uid = 0, $devid = '')
+    public function record($action = '', $data = [], $uid = 0, $devid = '')
     {
         $record = [
             '_ld_'    => date('Y-m-d H:i:s'),
@@ -122,7 +131,7 @@ class Log
         ];
 
         $record = array_merge($data, $record);
-        $record = json_decode($record, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $record = json_encode($record, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         self::write(static::RECORD, $record, []);
     }
 
@@ -135,7 +144,7 @@ class Log
      *
      * @return null
      */
-    public static function write($level, $message, array $context = [])
+    public function write($level, $message, array $context = [])
     {
         if (is_object($message)) {
             $message = json_decode(json_encode($message), true);
@@ -163,10 +172,10 @@ class Log
         self::printConsoleLog($message, $level, $file, $line);
     }
 
-    public static function printConsoleLog($message, $level = 'TRACE', $file = '', $line = 0)
+    public function printConsoleLog($message, $level = 'TRACE', $file = '', $line = 0)
     {
         $message = sprintf('[%s][%s][%s][%s]%s', date('Y-m-d H:i:s'), $level, $file, $line, $message);
         //记录到一个文件....
-        error_log($message . PHP_EOL, 3, APP_LOG . date('Y-m-d') . sprintf('-%s.log', strtolower($level)));
+        error_log($message . PHP_EOL, 3, $this->logPath . '/' . date('Y-m-d') . sprintf('-%s.log', strtolower($level)));
     }
 }

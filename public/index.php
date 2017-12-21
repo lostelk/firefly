@@ -1,134 +1,26 @@
 <?php
-/**
- * index
- *
- * @author : Cyw
- * @email  : rose2099.c@gmail.com
- * @created: 16/12/30 下午7:28
- * @logs   :
- *
- */
-
 error_reporting(E_ALL);
-ini_set('display_errors', '1');
 
-use Phalcon\Db\Adapter\Pdo\Mysql as MysqlAdapter;
-use Phalcon\Di\FactoryDefault;
-use Phalcon\Mvc\Model\MetaData\Memory as MemoryMetaData;
-use Phalcon\Mvc\Model\MetaData\Redis as RedisMetaData;
-use Core\FireReturn;
-use Core\Log;
+define('APP_NAME', 'FIREFLY'); // 项目名称
+define('APP_ENV', getenv('SY_APPLICATION_ENV'));
 
-define('APP_NAME', 'api_firefly'); // 设置项目名称,给redis加前缀
-define('APP_ENV', getenv('SY_APPLICATION_ENV')); // 环境变量［local,prerelease,master］
-define('APP_PATH', __DIR__ . '/../app');
+define('APP_PATH', __DIR__ . '/../apps');
+define('BASE_PATH', __DIR__ . '/..');
 
-function is_online()
+function isOnline()
 {
     return APP_ENV === 'master';
 }
 
-function is_prerelease()
+function isPrerelease()
 {
     return APP_ENV === 'prerelease';
 }
 
-function is_local()
+function isLocal()
 {
-    return APP_ENV === 'local' || APP_ENV === 'local_qm';
+    return APP_ENV === 'local';
 }
-
-// XSS 过滤
-function safe_replace($string)
-{
-    $string = str_replace('%20', '', $string);
-    $string = str_replace('%27', '', $string);
-    $string = str_replace('%2527', '', $string);
-
-    /*$string = str_replace('"', '&quot;', $string);
-    $string = str_replace("'", '', $string);
-    $string = str_replace('"', '', $string);
-    $string = str_replace(';', '', $string);
-    $string = str_replace('<', '&lt;', $string);
-    $string = str_replace('>', '&gt;', $string);
-    $string = str_replace('\\', '', $string);*/
-
-    return $string;
-}
-
-function safe_filter($str)
-{
-    $filter = null;
-    if (is_array($str)) {
-        foreach ($str as $key => $val) {
-            $filter[safe_replace($key)] = safe_filter($val);
-        }
-    } else {
-        $filter = safe_replace($str);
-    }
-
-    return $filter;
-}
-
-if ($_GET) {
-    $_GET = safe_filter($_GET);
-}
-if ($_POST) {
-    $_POST = safe_filter($_POST);
-}
-if ($_REQUEST) {
-    $_REQUEST = safe_filter($_REQUEST);
-}
-if ($_COOKIE) {
-    $_COOKIE = safe_filter($_COOKIE);
-}
-
-// 加载项目选项
-$project = 'public';
-$controllerDir = APP_PATH . '/controllers/public/';
-$uri = $_SERVER['REQUEST_URI'];
-
-// 可以被公共访问
-if (strpos($uri, 'public') === 1) {
-    $project = 'public';
-    $controllerDir = APP_PATH . '/controllers/public/';
-}
-
-// 必须授权
-if (strpos($uri, 'user') === 1) {
-    $project = 'user';
-    $controllerDir = APP_PATH . '/controllers/user/';
-}
-
-if (strpos($uri, 'auth') === 1) {
-    $project = 'auth';
-    $controllerDir = APP_PATH . '/controllers/auth/';
-}
-
-// loader
-$loader = new \Phalcon\Loader();
-
-// 根据命名空间前缀加载
-$loader->registerNamespaces([
-    'Core'   => APP_PATH . '/library/core/',
-    'Model'  => APP_PATH . '/library/model/',
-    'Vendor' => APP_PATH . '/library/vendor/',
-]);
-
-$loader->registerDirs([
-    $controllerDir,
-])->register();
-
-// Di
-$di = new FactoryDefault();
-
-// config
-if (file_exists(APP_PATH . '/config/config.' . APP_ENV . '.php')) {
-    $config = include APP_PATH . '/config/config.' . APP_ENV . '.php';
-    $di->set('config', $config, true);
-}
-
-define('APP_LOG', $di->getConfig()->logPath);
 
 class Request extends Phalcon\Http\Request
 {
@@ -147,10 +39,6 @@ class Request extends Phalcon\Http\Request
             $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
         }
 
-        if ($ip) {
-            $ip = safe_filter($ip);
-        }
-
         $ip = explode(',', $ip);
         $ip = trim($ip[0]);
 
@@ -158,121 +46,107 @@ class Request extends Phalcon\Http\Request
     }
 }
 
-$di->set('request', function () {
-    return new Request;
-});
+try {
+    $di = new Phalcon\DI\FactoryDefault();
 
-// 设置数据库服务实例 return $app->db_config
-foreach ((array)$di->get('config')->databases as $key => $database) {
-    $di->set($key, function () use ($database) {
-        return new MysqlAdapter($database->toArray());
-    });
-}
-// 设置redis return $app->redisCache
-foreach ((array)$di->get('config')->redis as $k => $v) {
-    $di->set('redis' . $k, function () use ($v) {
-        $objRedis = new \Core\FireRedis($v->toArray());
 
-        return $objRedis;
-    });
-}
+    $config = APP_PATH . '/config/config.' . APP_ENV . '.php';
+    if (file_exists($config)) {
+        $config = include APP_PATH . '/config/config.' . APP_ENV . '.php';
+        $di->set('config', $config, true);
+    }
 
-$di->set(
-    'modelsMetadata',
-    function () use ($di) {
-        if ($di->get('config')->debug) {
-            $metaData = new MemoryMetaData();
-        } else {
-            $metaData = new RedisMetaData($di->get('config')->DATA_CACHE_META->toArray());
-        }
+    define('APP_LOG', $di->getConfig()->logPath);
 
-        return $metaData;
-    },
-    true
-);
+    $di->set('router', function () {
+        $router = new Core\Router(false);
 
-$di->set(
-    'modelsCache',
-    function () use ($di) {
-        if ($di->get('config')->debug) {
-            return new \Phalcon\Cache\Backend\Memory(new \Phalcon\Cache\Frontend\None());
-        }
-        $frontend = new \Phalcon\Cache\Frontend\Data([
-            'lifetime' => 86400,
+        // 注册 notFound
+        $router->notFound([
+            'namespace'  => 'FireFly\Controllers',
+            'controller' => 'Index',
+            'action'     => 'notFound'
         ]);
 
-        return new \Phalcon\Cache\Backend\Redis($frontend, $di->get('config')->DATA_CACHE_MODEL->toArray());
-    },
-    true
-);
+        $router->add('/', [
+            'namespace'  => 'FireFly\Controllers',
+            'controller' => 'Index',
+            'action'     => 'index'
+        ]);
 
-$di->set(
-    'cookies',
-    function () {
-        $cookies = new Phalcon\Http\Response\Cookies();
-        $cookies->useEncryption(false); //禁用加密
-        return $cookies;
+        // 公共信息路由组
+        $router->mount(new FireFly\Routes\CommonRoutes());
+
+        return $router;
     });
 
-// APP
-$app = new \Phalcon\Mvc\Micro($di);
+    // Registering a dispatcher
+    $di->set('dispatcher', function () {
+        $dispatcher = new Phalcon\Mvc\Dispatcher;
+        $dispatcher->setDefaultNamespace('FireFly\Controllers\\');
 
-// 加载路由
-include APP_PATH . '/config/route.' . $project . '.php';
+        return $dispatcher;
+    });
 
-$app->notFound(function () use ($app) {
-    $app->response->setStatusCode(404, "Not Found")->sendHeaders();
-    echo 'This is crazy, but this page was not found!';
-    exit;
-});
+    // Registering a Http\Response
+    $di->set('response', function () {
+        return new Phalcon\Http\Response();
+    });
 
-set_error_handler(function ($errno, $errstr, $errfile, $errline) use ($app, $di) {
-    $app->response->setContentType('application/json', 'UTF-8')->sendHeaders();
-    $errorMsg = "Error:{$errno} {$errstr} File>>{$errfile}:{$errline}";
-    $err = is_online() ? '系统错误' : $errorMsg;
-    if (is_online()) {
-        Log::error($errorMsg);
+    // Registering a Http\Request
+    $di->set('request', function () {
+        return new Request();
+    });
+
+    // Registering the view component
+    $di->set('view', function () {
+        $view = new Phalcon\Mvc\View();
+        $view->setViewsDir('../apps/views/');
+
+        return $view;
+    });
+
+    $di->set('log', function () use ($di) {
+        $log = new Core\Log($di->getConfig()->logPath);
+        return $log;
+    });
+
+    // redis return $app->redisCache
+    foreach ((array)$di->get('config')->redis as $k => $v) {
+        $di->set('redis' . $k, function () use ($v) {
+            $objRedis = new \Core\BeehiveRedis($v->toArray());
+
+            return $objRedis;
+        });
     }
-    echo FireReturn::makeJson($errno, $err);
-    exit;
-});
 
-set_exception_handler(function (Exception $e) use ($app) {
-    $logMsg = sprintf('Exception:code=%d, message=%s, file=%s:%s',
-        $e->getCode(),
-        $e->getMessage(),
-        $e->getFile(),
-        $e->getLine()
+    // Loader
+    $loader = new Phalcon\Loader();
+
+    $loader->registerFiles([
+        __DIR__ . '/../vendor/autoload.php'
+    ]);
+
+    $loader->registerNamespaces(
+        [
+            'FireFly\Controllers' => '../apps/controllers/',
+            'FireFly\\Routes'     => '../apps/routes/',
+            'FireFly\\Models'     => '../apps/models/',
+            'Core'               => '../apps/library/core/',
+            'FireFly\\Module'     => '../apps/library/module/',
+            'FireFly\\Traits'     => '../apps/library/traits/',
+        ]
     );
 
-    $app->response->setContentType('application/json', 'UTF-8')->sendHeaders();
-
-    if (is_online()) {
-        Log::error($logMsg);
-        $msg = sprintf('系统异常:code=%d', $e->getCode());
-    } else {
-        $msg = $logMsg;
-    }
-
-    echo FireReturn::makeJson($e->getCode(), $msg);
-    exit;
-});
-
-register_shutdown_function(function () use ($app, $di) {
-    $app->response->setContentType('application/json', 'UTF-8')->sendHeaders();
-    $last_error = error_get_last();
-
-    $errorMsg = '致命错误：' . $last_error['message'] . ' ' . $last_error['file'] . ' ' . $last_error['line'];
-    if (!is_null($last_error)) {
-        $errstr = is_online() ? '系统错误' : $errorMsg;
-        $strRtn = FireReturn::makeJson(1000, $errstr);
-
-        if (is_online()) {
-            Log::error($errorMsg);
-        }
-        echo $strRtn;
-        exit;
-    }
-});
-
-$app->handle();
+    $loader->register();
+    $application = new Phalcon\Mvc\Application();
+    $application->setDI($di);
+    echo $application->handle()->getContent();
+} catch (Phalcon\Exception $e) {
+    echo $e->getMessage();
+} catch (Core\Rpc\RpcException $e) {
+    $controller = new FireFly\Module\Controller\ErrorController;
+    echo $controller->showError($e->getCode(), $e->getMessage());
+} catch (PDOException $e) {
+    echo $e->getMessage();
+}

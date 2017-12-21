@@ -1,0 +1,15 @@
+[
+  {
+    "name": "task-open-notify",
+    "script": "task.php",
+    "args": "notify",
+    "exec_interpreter": "php",
+    "exec_mode": "fork",
+    "env": {
+      "SY_APPLICATION_ENV": "master"
+    },
+    "cwd": "/app/data/php/php-api-open/cli/",
+    "one_launch_only": "true",
+    "max_memory_restart": "60M"
+  }
+]

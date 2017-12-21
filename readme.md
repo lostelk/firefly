@@ -1,16 +1,13 @@
 ## FireFly Framework
 
-FireFly is a PHP micro-framework that helps you quickly write simple yet powerful web applications and APIs.
-
-## Feature
-
-1. Scheme for app response data
-2. Xhprof for app [todo]
+FireFly is a PHP Framework that helps you quickly write simple yet powerful web applications and APIs.
 
 ## How To Install
 
 1. add php ext [phalcon](https://phalconphp.com/zh/)
-2. config nginx
+2. git clone
+3. composer install
+4. config nginx
 
 ````
 server {
@@ -45,4 +42,4 @@ server {
         }
 }
 ````
-3. restart nginx php-fpm and open //xxxx/public/test
+5. restart nginx php-fpm and open //xxxx/public/test

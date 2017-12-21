@@ -1,0 +1,21 @@
+{
+  "name": "php-api-firefly",
+  "description": "The FireFly Framework",
+  "author": "rose2099.c@gmail.com",
+  "keywords": [
+    "framework",
+    "php",
+    "api"
+  ],
+  "license": "MIT",
+  "type": "project",
+  "require": {
+    "guzzlehttp/guzzle": "^6.3"
+  },
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://packagist.phpcomposer.com"
+    }
+  ]
+}

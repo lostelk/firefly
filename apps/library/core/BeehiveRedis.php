@@ -1,16 +1,30 @@
 <?php
 namespace Core;
-
 use Redis;
 use Exception;
 
-class FireRedis
+/**
+ * Redis读写封装
+ *
+ * User: Blink
+ * Email: caogemail@163.com
+ * Date: 16/12/23
+ * Time: 上午2:53
+ */
+class BeehiveRedis
 {
     private $masterWeight = 10;
 
     private $master = null;
+    private $masterCID = 'none';
+    private $masterConfig = null;
 
     private $slave = null;
+    private $slaveCID = 'none';
+    private $slaveConfig = null;
+
+    private $traceEnabled = false;
+
     private $readOnlyCommands = [
         'info',
         'smembers',
@@ -51,7 +65,7 @@ class FireRedis
         'sismember'
     ];
 
-    public function __construct($option = [])
+    public function __construct($option = [], $tracedAsName = null)
     {
         if (!class_exists('Redis')) {
             throw new Exception('redis not suport!');
@@ -67,9 +81,19 @@ class FireRedis
         $option['reads'] = isset($option['reads']) && is_array($option['reads']) ? $option['reads'] : [];
 
         $this->masterWeight = isset($option['readWeight']) && $option['reads'] ? (int)$option['readWeight'] : 10;
+        $this->masterConfig = $option;
 
         $this->master = $this->connect($option['host'], $option['port'], $option['timeout'], $option['persistent']);
-        $option['auth'] and $this->master->auth($option['auth']);
+
+        if($option['auth']) {
+            try {
+                $authResult = $this->master->auth($option['auth']);
+            } catch(\Exception $e) {
+                throw $e;
+            }
+        }
+
+        $tracedAsName && $this->masterCID = "{$tracedAsName}:{$option['host']}:{$option['port']}";
 
         if ($option['reads']) {
             shuffle($option['reads']);
@@ -78,10 +102,22 @@ class FireRedis
             $port = isset($config['port']) ? $config['port'] : 6379;
             $timeout = isset($config['timeout']) ? $config['timeout'] : 0;
             $persistent = isset($config['persistent']) ? (bool)$config['persistent'] : false;
+            $this->slaveConfig = $config;
             $this->slave = $this->connect($host, $port, $timeout, $persistent);
 
-            isset($config['auth']) and $this->slave->auth($config['auth']);
+            if(isset($config['auth']) && $config['auth']) {
+
+                try {
+                    $authResult = $this->slave->auth($config['auth']);
+                } catch(\Exception $e2) {
+                    throw $e2;
+                }
+            }
+
+            $tracedAsName && $this->slaveCID = "{$tracedAsName}:{$config['host']}:{$config['port']}";
         }
+
+        $tracedAsName && $this->traceEnabled = true;
     }
 
     /**
@@ -102,7 +138,6 @@ class FireRedis
         if (!$ret) {
             throw new Exception(sprintf('read redis connet fail at %s:%s', $host, $port));
         }
-
         return $connect;
     }
 
@@ -133,10 +168,21 @@ class FireRedis
         if ($this->masterWeight < rand(1, 10) && $this->slave && in_array(strtolower($funcName),
                 $this->readOnlyCommands)
         ) {
-            return $key ? $this->slave->$funcName($key, ...$param) : $this->slave->$funcName();
+            $selectedConn = $this->slave;
+            $targetCID = $this->slaveCID;
+            $redisConfig = $this->slaveConfig;
+        } else {
+            $selectedConn = $this->master;
+            $targetCID = $this->masterCID;
+            $redisConfig = $this->masterConfig;
         }
 
-        return $key ? $this->master->$funcName($key, ...$param) : $this->master->$funcName();
+        try {
+            $result = $key ? $selectedConn->$funcName($key, ...$param) : $selectedConn->$funcName();
+            return $result;
+        } catch (Exception $e) {
+            throw $e;
+        }
     }
 
     /**
